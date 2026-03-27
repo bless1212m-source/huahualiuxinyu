@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>沙盒乐园 · 李李 & 毛毛</title>
+    <title>像素沙盒 · 李李 & 毛毛</title>
     <style>
         * {
             user-select: none;
@@ -17,7 +17,7 @@
             min-height: 100vh;
             margin: 0;
             padding: 20px;
-            font-family: 'Comic Neue', 'Comic Sans MS', 'Segoe UI', cursive;
+            font-family: 'Courier New', 'Comic Neue', monospace;
         }
         .game-container {
             background: #fdf8e7;
@@ -32,6 +32,8 @@
             border-radius: 24px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.2);
             cursor: crosshair;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
         }
         .toolbar {
             margin: 20px 10px 10px;
@@ -134,59 +136,51 @@
         canvas.height = height;
 
         // 网格参数
-        const gridW = 25;   // 25列
-        const gridH = 15;   // 15行
+        const gridW = 25;
+        const gridH = 15;
         const cellW = width / gridW;
         const cellH = height / gridH;
 
         // 游戏数据
-        let blocks = [];      // { type: 'block', color: '#xx' } 或 'flower' 或 'starTree'
-        let flowers = [];     // 花朵位置存储简化，我们统一用 blocks 存储，type 区分
-        // 初始化空地图
+        let blocks = [];
         for (let i=0; i<gridH; i++) {
             blocks[i] = [];
-            for (let j=0; j<gridW; j++) {
-                blocks[i][j] = null; // null 表示空地
-            }
+            for (let j=0; j<gridW; j++) blocks[i][j] = null;
         }
 
-        // 砖块颜色预设
         const colors = [
             '#FFB7C5', '#A7E0E0', '#FFD966', '#98FB98', '#FFB347', '#C5E99B', '#F4A261', '#D9BF77'
         ];
         let currentColor = colors[0];
-        let isFlowerMode = false;   // 种花模式
+        let isFlowerMode = false;
 
-        // 角色
         let players = [
             { name: '李李', x: 5, y: 5, fly: false, color: '#FFB7C5', hair: '#B5651E' },
             { name: '毛毛', x: 8, y: 7, fly: false, color: '#A7E0E0', hair: '#8B5A2B' }
         ];
-        let currentControl = 0;  // 0=李李,1=毛毛，按F控制当前角色飞行
+        let currentControl = 0;
 
         // 小猫 (跟随李李)
         let cats = [
-            { name: '钢镚', type: 'silver', eyeColor: '#88DD66', offsetAngle: 0, radius: 22 },
-            { name: '塑料袋', type: 'calico', eyeColor: '#88DD66', offsetAngle: Math.PI, radius: 22 }
+            { name: '钢镚', type: 'silver', eyeColor: '#88DD66', offsetAngle: 0, radius: 28, jumpY: 0, jumpSpeed: 0 },
+            { name: '塑料袋', type: 'calico', eyeColor: '#88DD66', offsetAngle: Math.PI, radius: 28, jumpY: 0, jumpSpeed: 0 }
         ];
         let catAngle = 0;
+        let catJumpTimer = 0;
 
         // 魔法星星
-        let stars = [];          // { x, y, col, row }
-        let starTreeList = [];   // 存储星星树位置 { row, col, timer }
-
-        // 流星雨特效
+        let stars = [];
+        let starTreeList = [];
         let meteors = [];
         let meteorTimer = null;
 
-        // 随机生成星星
         function spawnRandomStar() {
             if (stars.length >= 5) return;
             let row, col;
             do {
                 row = Math.floor(Math.random() * gridH);
                 col = Math.floor(Math.random() * gridW);
-            } while (blocks[row][col] !== null || isPlayerOn(row, col)); // 避免已有物品或角色占位
+            } while (blocks[row][col] !== null || isPlayerOn(row, col));
             stars.push({ x: col * cellW + cellW/2, y: row * cellH + cellH/2, row, col });
             updateStarUI();
         }
@@ -195,60 +189,46 @@
             return (players[0].y === row && players[0].x === col) || (players[1].y === row && players[1].x === col);
         }
 
-        // 踩星星
         function collectStar(row, col) {
             let idx = stars.findIndex(s => s.row === row && s.col === col);
             if (idx !== -1) {
                 stars.splice(idx,1);
-                // 种星星树
                 if (blocks[row][col] === null) {
                     blocks[row][col] = { type: 'starTree', plantedTime: Date.now() };
-                    starTreeList.push({ row, col, timer: 0 });
+                    starTreeList.push({ row, col });
                 }
-                // 下流星雨
                 startMeteorShower();
                 updateStarUI();
             }
         }
 
         function startMeteorShower() {
-            // 清除之前的流星雨计时
-            if (meteorTimer) clearInterval(meteorTimer);
-            // 生成40颗流星
+            if (meteorTimer) clearTimeout(meteorTimer);
             for (let i=0; i<60; i++) {
                 meteors.push({
                     x: Math.random() * width,
                     y: Math.random() * height - 100,
                     vx: (Math.random() - 0.5) * 3 + 1,
                     vy: 2 + Math.random() * 4,
-                    size: 2 + Math.random() * 5,
-                    alpha: 1,
                     color: `hsl(${Math.random() * 60 + 30}, 100%, 70%)`
                 });
             }
-            // 5秒后停止新流星，但动画会自然消失
-            meteorTimer = setTimeout(() => {
-                meteorTimer = null;
-            }, 5000);
+            meteorTimer = setTimeout(() => { meteorTimer = null; }, 5000);
         }
 
         function updateStarUI() {
             document.getElementById('starCount').innerText = stars.length;
         }
 
-        // 放置砖块 / 种花
         function placeItem(row, col) {
             if (row<0 || row>=gridH || col<0 || col>=gridW) return false;
-            // 不能覆盖角色
             if (isPlayerOn(row, col)) return false;
             if (isFlowerMode) {
-                // 种花
                 if (blocks[row][col] === null) {
                     blocks[row][col] = { type: 'flower', color: '#FFC0CB' };
                     return true;
                 }
             } else {
-                // 放置砖块
                 if (blocks[row][col] === null) {
                     blocks[row][col] = { type: 'block', color: currentColor };
                     return true;
@@ -257,38 +237,30 @@
             return false;
         }
 
-        // 拆除（右键）
         function removeItem(row, col) {
             if (blocks[row][col] !== null) {
                 blocks[row][col] = null;
-                // 如果是星星树，从列表中移除
                 starTreeList = starTreeList.filter(t => !(t.row === row && t.col === col));
                 return true;
             }
             return false;
         }
 
-        // 移动角色
         function movePlayer(pIdx, dx, dy) {
             let p = players[pIdx];
             let newX = p.x + dx;
             let newY = p.y + dy;
             if (newX<0 || newX>=gridW || newY<0 || newY>=gridH) return;
-            // 飞行模式可以穿过砖块，否则不能进入有砖块或花朵或星星树的格子
             if (!p.fly) {
                 let target = blocks[newY][newX];
                 if (target !== null && (target.type === 'block' || target.type === 'flower' || target.type === 'starTree')) {
                     return;
                 }
             }
-            // 移动
             p.x = newX;
             p.y = newY;
-            // 检查是否踩到星星
             let starIdx = stars.findIndex(s => s.row === p.y && s.col === p.x);
-            if (starIdx !== -1) {
-                collectStar(p.y, p.x);
-            }
+            if (starIdx !== -1) collectStar(p.y, p.x);
             updatePosUI();
         }
 
@@ -297,33 +269,112 @@
             document.getElementById('pos1').innerText = `(${players[1].x},${players[1].y})`;
         }
 
-        // 重置所有建筑
         function resetBuildings() {
-            for (let i=0; i<gridH; i++) {
-                for (let j=0; j<gridW; j++) {
-                    blocks[i][j] = null;
-                }
-            }
+            for (let i=0; i<gridH; i++)
+                for (let j=0; j<gridW; j++) blocks[i][j] = null;
             starTreeList = [];
             stars = [];
-            // 重新生成几个星星
             for (let i=0; i<3; i++) spawnRandomStar();
         }
 
-        // 定时刷新星星
         setInterval(() => {
-            if (stars.length < 3 && Math.random() < 0.4) {
-                spawnRandomStar();
-            }
+            if (stars.length < 3 && Math.random() < 0.4) spawnRandomStar();
         }, 8000);
 
-        // 绘制所有元素
+        // 小猫跳跃动画
+        function updateCatsJump() {
+            for (let cat of cats) {
+                // 随机上下跳动，简单模拟
+                cat.jumpY = Math.sin(Date.now() * 0.008 + cat.offsetAngle) * 4;
+            }
+        }
+
+        // 像素风格绘图函数
+        function drawPixelGirl(x, y, name, color, hairColor, fly) {
+            const cx = x + cellW/2;
+            const cy = y + cellH/2 - 2;
+            const size = cellW * 0.5;
+            const pixelSize = Math.max(2, Math.floor(cellW * 0.08));
+
+            ctx.save();
+            if (fly) {
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = "#FFDD88";
+            }
+            // 头 (方形像素)
+            ctx.fillStyle = hairColor;
+            ctx.fillRect(cx - size/2, cy - size/2, size, size);
+            // 脸
+            ctx.fillStyle = "#FFE0BD";
+            ctx.fillRect(cx - size/2 + 2, cy - size/2 + 2, size-4, size-4);
+            // 眼睛
+            ctx.fillStyle = "#4F2D1A";
+            ctx.fillRect(cx - size/4, cy - size/4, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/4 - pixelSize, cy - size/4, pixelSize, pixelSize);
+            // 腮红
+            ctx.fillStyle = "#FFAAAA";
+            ctx.fillRect(cx - size/2 + 2, cy, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/2 - 2 - pixelSize, cy, pixelSize, pixelSize);
+            // 头发装饰
+            ctx.fillStyle = "#FF6F61";
+            ctx.fillRect(cx - size/3, cy - size/2, size/3*2, pixelSize);
+            // 身体 (方块)
+            ctx.fillStyle = color;
+            ctx.fillRect(cx - size/3, cy + size/4, size/3*2, size/2);
+            // 手 (两条小线)
+            ctx.fillStyle = color;
+            ctx.fillRect(cx - size/2, cy + size/3, pixelSize, pixelSize*2);
+            ctx.fillRect(cx + size/2 - pixelSize, cy + size/3, pixelSize, pixelSize*2);
+            // 脚
+            ctx.fillRect(cx - size/4, cy + size/2 + pixelSize, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/4 - pixelSize, cy + size/2 + pixelSize, pixelSize, pixelSize);
+            ctx.restore();
+        }
+
+        function drawPixelCat(x, y, name, type, jumpY) {
+            const cx = x;
+            const cy = y + jumpY;
+            const size = cellW * 0.3;
+            const pixelSize = Math.max(2, Math.floor(cellW * 0.07));
+
+            ctx.save();
+            ctx.fillStyle = type === 'silver' ? "#C0C0C0" : "#E8A87C";
+            // 身体
+            ctx.fillRect(cx - size/2, cy - size/2, size, size);
+            // 耳朵
+            ctx.fillStyle = type === 'silver' ? "#A9A9A9" : "#B57A4A";
+            ctx.fillRect(cx - size/2, cy - size/2 - pixelSize, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/2 - pixelSize, cy - size/2 - pixelSize, pixelSize, pixelSize);
+            // 眼睛
+            ctx.fillStyle = "#88DD66";
+            ctx.fillRect(cx - size/4, cy - size/4, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/4 - pixelSize, cy - size/4, pixelSize, pixelSize);
+            ctx.fillStyle = "#000";
+            ctx.fillRect(cx - size/4, cy - size/4, pixelSize/2, pixelSize/2);
+            ctx.fillRect(cx + size/4 - pixelSize/2, cy - size/4, pixelSize/2, pixelSize/2);
+            // 胡子 (小短线)
+            ctx.fillStyle = "#333";
+            ctx.fillRect(cx - size/2, cy - size/6, pixelSize, pixelSize/2);
+            ctx.fillRect(cx - size/2, cy, pixelSize, pixelSize/2);
+            ctx.fillRect(cx + size/2 - pixelSize, cy - size/6, pixelSize, pixelSize/2);
+            ctx.fillRect(cx + size/2 - pixelSize, cy, pixelSize, pixelSize/2);
+            // 尾巴
+            ctx.fillStyle = type === 'silver' ? "#A9A9A9" : "#B57A4A";
+            ctx.fillRect(cx + size/2, cy + size/4, pixelSize, pixelSize*2);
+            // 腿
+            ctx.fillRect(cx - size/3, cy + size/4, pixelSize, pixelSize);
+            ctx.fillRect(cx + size/3 - pixelSize, cy + size/4, pixelSize, pixelSize);
+            // 名字
+            ctx.font = `${Math.max(8, Math.floor(cellW*0.12))}px "Courier New"`;
+            ctx.fillStyle = "#4a2a1a";
+            ctx.fillText(name, cx - 10, cy - size/2 - 2);
+            ctx.restore();
+        }
+
         function draw() {
             ctx.clearRect(0,0,width,height);
-            // 草地背景
             ctx.fillStyle = "#b3d9a0";
             ctx.fillRect(0,0,width,height);
-            // 网格线
             ctx.strokeStyle = "#d9d0a5";
             ctx.lineWidth = 1;
             for (let i=0; i<=gridW; i++) {
@@ -363,7 +414,6 @@
                             ctx.fill();
                         }
                     } else if (item.type === 'starTree') {
-                        // 小星星树
                         ctx.fillStyle = "#8B5A2B";
                         ctx.fillRect(x+cellW*0.4, y+cellH*0.5, cellW*0.2, cellH*0.3);
                         ctx.fillStyle = "#FFD966";
@@ -380,14 +430,12 @@
                 }
             }
 
-            // 绘制魔法星星
+            // 星星
             for (let s of stars) {
                 ctx.fillStyle = "#FFD966";
-                ctx.beginPath();
-                let spikes = 5;
-                let outer = cellW*0.25;
-                let inner = cellW*0.12;
+                let spikes = 5, outer = cellW*0.25, inner = cellW*0.12;
                 let cx = s.x, cy = s.y;
+                ctx.beginPath();
                 for (let i=0; i<spikes*2; i++) {
                     let rad = (i * Math.PI*2 / (spikes*2)) - Math.PI/2;
                     let r = (i%2===0) ? outer : inner;
@@ -396,7 +444,6 @@
                     if (i===0) ctx.moveTo(px,py);
                     else ctx.lineTo(px,py);
                 }
-                ctx.closePath();
                 ctx.fill();
                 ctx.fillStyle = "#FFB347";
                 ctx.beginPath();
@@ -408,168 +455,94 @@
             for (let p of players) {
                 let x = p.x * cellW;
                 let y = p.y * cellH;
-                // 飞行光效
-                if (p.fly) {
-                    ctx.shadowBlur = 12;
-                    ctx.shadowColor = "#FFDD88";
-                }
-                // 画小女孩
-                ctx.fillStyle = p.hair;
-                ctx.beginPath();
-                ctx.ellipse(x+cellW/2, y+cellH*0.35, cellW*0.22, cellH*0.25, 0, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = "#FFE0BD";
-                ctx.beginPath();
-                ctx.ellipse(x+cellW/2, y+cellH*0.45, cellW*0.18, cellH*0.2, 0, 0, Math.PI*2);
-                ctx.fill();
-                // 眼睛
-                ctx.fillStyle = "#4F2D1A";
-                ctx.beginPath();
-                ctx.arc(x+cellW*0.35, y+cellH*0.4, cellW*0.04, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(x+cellW*0.65, y+cellH*0.4, cellW*0.04, 0, Math.PI*2);
-                ctx.fill();
-                // 腮红
-                ctx.fillStyle = "#FFAAAA";
-                ctx.beginPath();
-                ctx.arc(x+cellW*0.25, y+cellH*0.5, cellW*0.04, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(x+cellW*0.75, y+cellH*0.5, cellW*0.04, 0, Math.PI*2);
-                ctx.fill();
-                // 衣服
-                ctx.fillStyle = p.color;
-                ctx.beginPath();
-                ctx.ellipse(x+cellW/2, y+cellH*0.65, cellW*0.16, cellH*0.18, 0, 0, Math.PI*2);
-                ctx.fill();
-                // 蝴蝶结
-                ctx.fillStyle = "#FF6F61";
-                ctx.beginPath();
-                ctx.moveTo(x+cellW*0.4, y+cellH*0.25);
-                ctx.lineTo(x+cellW/2, y+cellH*0.18);
-                ctx.lineTo(x+cellW*0.6, y+cellH*0.25);
-                ctx.fill();
-                ctx.shadowBlur = 0;
+                drawPixelGirl(x, y, p.name, p.color, p.hair, p.fly);
             }
 
-            // 绘制跟随李李的小猫（动态转圈）
+            // 小猫跟随李李，转圈+跳跃
             let lili = players[0];
             let liliX = lili.x * cellW + cellW/2;
-            let liliY = lili.y * cellH + cellH/2 - 5;
+            let liliY = lili.y * cellH + cellH/2 - 6;
             catAngle += 0.03;
+            updateCatsJump();
             for (let cat of cats) {
                 let angle = catAngle + cat.offsetAngle;
                 let catX = liliX + Math.cos(angle) * cat.radius;
                 let catY = liliY + Math.sin(angle) * cat.radius * 0.6;
-                ctx.save();
-                if (cat.type === 'silver') ctx.fillStyle = "#C0C0C0";
-                else ctx.fillStyle = "#E8A87C";
-                ctx.beginPath();
-                ctx.ellipse(catX, catY, 12, 10, 0, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = cat.type==='silver' ? "#A9A9A9" : "#B57A4A";
-                ctx.beginPath();
-                ctx.moveTo(catX-8, catY-8);
-                ctx.lineTo(catX-3, catY-2);
-                ctx.lineTo(catX-11, catY-4);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.moveTo(catX+8, catY-8);
-                ctx.lineTo(catX+3, catY-2);
-                ctx.lineTo(catX+11, catY-4);
-                ctx.fill();
-                ctx.fillStyle = cat.eyeColor;
-                ctx.beginPath();
-                ctx.arc(catX-4, catY-1, 2, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(catX+4, catY-1, 2, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = "#000";
-                ctx.beginPath();
-                ctx.arc(catX-4.5, catY-1.5, 0.7, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(catX+3.5, catY-1.5, 0.7, 0, Math.PI*2);
-                ctx.fill();
-                ctx.font = "bold 10px 'Comic Neue'";
-                ctx.fillStyle = "#4a2a1a";
-                ctx.fillText(cat.name, catX-12, catY-12);
-                ctx.restore();
+                drawPixelCat(catX, catY, cat.name, cat.type, cat.jumpY);
             }
 
-            // 流星雨特效
+            // 流星雨
             for (let i=0; i<meteors.length; i++) {
                 let m = meteors[i];
                 ctx.fillStyle = m.color;
-                ctx.beginPath();
-                ctx.moveTo(m.x, m.y);
-                ctx.lineTo(m.x - m.vx*3, m.y - m.vy*3);
-                ctx.lineTo(m.x + m.vy*2, m.y - m.vx*2);
-                ctx.fill();
+                ctx.fillRect(m.x, m.y, 4, 2);
                 m.x += m.vx;
                 m.y += m.vy;
-                m.alpha -= 0.02;
-                if (m.y > height || m.x < 0 || m.x > width || m.alpha <= 0) {
+                if (m.y > height || m.x < 0 || m.x > width) {
                     meteors.splice(i,1);
                     i--;
                 }
             }
-            // 动态提示
-            ctx.font = "bold 14px 'Comic Neue'";
+            ctx.font = "bold 12px 'Courier New'";
             ctx.fillStyle = "#4a2a1a";
             ctx.fillText("✨ 点击颜色砖 → 点格子建房子 | 🌻种花模式 | ⭐踩星星 → 星星树+流星雨 | F 飞行", 20, 30);
         }
 
-        // 动画循环
         function animate() {
             draw();
             requestAnimationFrame(animate);
         }
 
-        // 事件绑定
+        // 事件绑定（同原版）
         function getGridCoord(e) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
-            let mouseX, mouseY;
+            let clientX, clientY;
             if (e.touches) {
-                mouseX = (e.touches[0].clientX - rect.left) * scaleX;
-                mouseY = (e.touches[0].clientY - rect.top) * scaleY;
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
             } else {
-                mouseX = (e.clientX - rect.left) * scaleX;
-                mouseY = (e.clientY - rect.top) * scaleY;
+                clientX = e.clientX;
+                clientY = e.clientY;
             }
-            const col = Math.floor(mouseX / cellW);
-            const row = Math.floor(mouseY / cellH);
+            const canvasX = (clientX - rect.left) * scaleX;
+            const canvasY = (clientY - rect.top) * scaleY;
+            const col = Math.floor(canvasX / cellW);
+            const row = Math.floor(canvasY / cellH);
             return { row, col };
         }
 
         canvas.addEventListener('click', (e) => {
             const { row, col } = getGridCoord(e);
-            if (row>=0 && row<gridH && col>=0 && col<gridW) {
-                placeItem(row, col);
-            }
+            if (row>=0 && row<gridH && col>=0 && col<gridW) placeItem(row, col);
         });
         canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             const { row, col } = getGridCoord(e);
-            if (row>=0 && row<gridH && col>=0 && col<gridW) {
-                removeItem(row, col);
+            if (row>=0 && row<gridH && col>=0 && col<gridW) removeItem(row, col);
+        });
+
+        let pressTimer;
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                pressTimer = setTimeout(() => {
+                    const { row, col } = getGridCoord(e);
+                    if (row>=0 && row<gridH && col>=0 && col<gridW) removeItem(row, col);
+                }, 500);
             }
         });
+        canvas.addEventListener('touchend', () => clearTimeout(pressTimer));
+        canvas.addEventListener('touchmove', () => clearTimeout(pressTimer));
 
         // 键盘控制
         const keyState = {};
         window.addEventListener('keydown', (e) => {
             const key = e.key;
-            // 飞行切换
             if (key === 'f' || key === 'F') {
                 players[currentControl].fly = !players[currentControl].fly;
                 return;
             }
-            // 切换当前控制角色（按 Tab 切换，方便单键盘）
             if (key === 'Tab') {
                 e.preventDefault();
                 currentControl = currentControl === 0 ? 1 : 0;
@@ -577,26 +550,19 @@
             }
             keyState[key] = true;
         });
-        window.addEventListener('keyup', (e) => {
-            keyState[e.key] = false;
-        });
+        window.addEventListener('keyup', (e) => { keyState[e.key] = false; });
 
         function handleMovement() {
-            // 李李 WASD
             if (keyState['w'] || keyState['W']) movePlayer(0, 0, -1);
             if (keyState['s'] || keyState['S']) movePlayer(0, 0, 1);
             if (keyState['a'] || keyState['A']) movePlayer(0, -1, 0);
             if (keyState['d'] || keyState['D']) movePlayer(0, 1, 0);
-            // 毛毛 方向键
             if (keyState['ArrowUp']) movePlayer(1, 0, -1);
             if (keyState['ArrowDown']) movePlayer(1, 0, 1);
             if (keyState['ArrowLeft']) movePlayer(1, -1, 0);
             if (keyState['ArrowRight']) movePlayer(1, 1, 0);
         }
-
-        setInterval(() => {
-            handleMovement();
-        }, 30);
+        setInterval(handleMovement, 30);
 
         // UI 初始化
         const paletteDiv = document.getElementById('colorPalette');
@@ -622,12 +588,9 @@
             else flowerBtn.classList.remove('active');
         });
 
-        document.getElementById('resetBtn').addEventListener('click', () => {
-            resetBuildings();
-        });
+        document.getElementById('resetBtn').addEventListener('click', resetBuildings);
 
-        // 启动游戏
-        resetBuildings();  // 初始生成3个星星
+        resetBuildings();
         updatePosUI();
         animate();
     })();
