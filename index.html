@@ -110,17 +110,18 @@
         <div class="toolbar">
             <div class="color-palette" id="colorPalette"></div>
             <button id="flowerModeBtn" class="mode-btn">🌻 种花模式</button>
-            <button id="resetBtn">🗑️ 清除所有建筑</button>
+            <button id="houseModeBtn" class="mode-btn">🏠 房子模式</button>
+            <button id="treeModeBtn" class="mode-btn">🌳 种树模式</button>
+            <button id="resetBtn">🗑️ 清除所有</button>
             <div class="info">
                 <span>🏠 李李: <span id="pos0">(0,0)</span></span>
                 <span>🐱 毛毛: <span id="pos1">(0,0)</span></span>
-                <span>⭐ 魔法星星: <span id="starCount">0</span></span>
+                <span>⭐ 星星: <span id="starCount">0</span></span>
+                <span>🏆 等级: <span id="level">1</span></span>
             </div>
         </div>
         <div class="controls">
-            🎮 李李: WASD &nbsp;&nbsp;|&nbsp;&nbsp; 🍀 毛毛: 方向键 &nbsp;&nbsp;|&nbsp;&nbsp;
-            ✨ 点击格子: 放置/种花 (右键拆除) &nbsp;&nbsp;|&nbsp;&nbsp;
-            🕊️ 按 F 键 让当前角色飞起来/落地
+            🎮 李李: WASD | 🍀 毛毛: 方向键 | ✨ 点击放置 | 右键拆除 | 🕊️ F 飞行 | 🚀 Tab 切换角色 | 🌟 踩星星升级 | 🏠 建房子加经验
         </div>
     </div>
 </div>
@@ -131,640 +132,512 @@
         const width = 1000, height = 600;
         canvas.width = width;
         canvas.height = height;
-        // 网格参数
+
         const gridW = 25;
         const gridH = 15;
         const cellW = width / gridW;
         const cellH = height / gridH;
-        // 游戏数据
+
         let blocks = [];
         for (let i=0; i<gridH; i++) {
             blocks[i] = [];
             for (let j=0; j<gridW; j++) blocks[i][j] = null;
         }
+
         const colors = [
-            '#FFB7C5', '#A7E0E0', '#FFD966', '#98FB98', '#FFB347', '#C5E99B', '#F4A261', '#D9BF77'
+            '#FFB7C5','#A7E0E0','#FFD966','#98FB98','#FFB347','#C5E99B','#F4A261','#D9BF77'
         ];
         let currentColor = colors[0];
-        let isFlowerMode = false;
-        // 区分服饰：李李（裤子）、毛毛（裙子），添加眨眼状态
+        let placeMode = 'block'; // block, flower, house, tree
+
         let players = [
-            { name: '李李', x: 5, y: 5, fly: false, color: '#FFB7C5', hair: '#B5651E', isPants: true, blink: false },
-            { name: '毛毛', x: 8, y: 7, fly: false, color: '#A7E0E0', hair: '#8B5A2B', isPants: false, blink: false }
+            { name:'李李',x:5,y:5,fly:false,color:'#FFB7C5',hair:'#B5651E',isPants:true,blink:false },
+            { name:'毛毛',x:8,y:7,fly:false,color:'#A7E0E0',hair:'#8B5A2B',isPants:false,blink:false }
         ];
         let currentControl = 0;
-        // 小猫 (跟随李李) - 添加四肢、眨眼
+
         let cats = [
-            { name: '钢镚', type: 'silver', eyeColor: '#88DD66', offsetAngle: 0, radius: 28, jumpY: 0, blink: false },
-            { name: '塑料袋', type: 'calico', eyeColor: '#88DD66', offsetAngle: Math.PI, radius: 28, jumpY: 0, blink: false }
+            { name:'钢镚',type:'silver',eyeColor:'#88DD66',offsetAngle:0,radius:28,jumpY:0,blink:false },
+            { name:'塑料袋',type:'calico',eyeColor:'#88DD66',offsetAngle:Math.PI,radius:28,jumpY:0,blink:false }
         ];
         let catAngle = 0;
-        // 魔法星星
+
+        // === 新增：等级、经验、天气、特效 ===
+        let level = 1;
+        let exp = 0;
+        let expNeed = 10;
         let stars = [];
         let starTreeList = [];
         let meteors = [];
+        let weather = 'sun';
+        let rainDrops = [];
+        let clouds = [];
         let meteorTimer = null;
 
-        // 眨眼动画定时器 - 随机眨眼，更自然
-        setInterval(() => {
-            players.forEach(p => p.blink = Math.random() > 0.95);
-            cats.forEach(c => c.blink = Math.random() > 0.95);
-            setTimeout(() => {
-                players.forEach(p => p.blink = false);
-                cats.forEach(c => c.blink = false);
-            }, 200);
-        }, 1000);
+        // 随机眨眼
+        setInterval(()=>{
+            players.forEach(p=>p.blink=Math.random()>0.95);
+            cats.forEach(c=>c.blink=Math.random()>0.95);
+            setTimeout(()=>{
+                players.forEach(p=>p.blink=false);
+                cats.forEach(c=>c.blink=false);
+            },200);
+        },1000);
 
-        function spawnRandomStar() {
-            if (stars.length >= 5) return;
-            let row, col;
-            do {
-                row = Math.floor(Math.random() * gridH);
-                col = Math.floor(Math.random() * gridW);
-            } while (blocks[row][col] !== null || isPlayerOn(row, col));
-            stars.push({ x: col * cellW + cellW/2, y: row * cellH + cellH/2, row, col });
+        // 随机天气
+        setInterval(()=>{
+            let r = Math.random();
+            if(r<0.6) weather='sun';
+            else if(r<0.9) weather='rain';
+            else weather='cloud';
+        },15000);
+
+        // 生成雨滴
+        setInterval(()=>{
+            if(weather!='rain') return;
+            rainDrops.push({
+                x:Math.random()*width,
+                y:-10,
+                vy:3+Math.random()*4
+            });
+        },100);
+
+        // 升级
+        function levelUp(){
+            exp -= expNeed;
+            level++;
+            expNeed = Math.floor(expNeed*1.5);
+            document.getElementById('level').innerText=level;
+            startMeteorShower();
+        }
+
+        // 加经验
+        function addExp(num){
+            exp+=num;
+            if(exp>=expNeed) levelUp();
+        }
+
+        function spawnRandomStar(){
+            if(stars.length>=5) return;
+            let row,col;
+            do{
+                row=Math.floor(Math.random()*gridH);
+                col=Math.floor(Math.random()*gridW);
+            }while(blocks[row][col]!==null||isPlayerOn(row,col));
+            stars.push({x:col*cellW+cellW/2,y:row*cellH+cellH/2,row,col});
             updateStarUI();
         }
-        function isPlayerOn(row, col) {
-            return (players[0].y === row && players[0].x === col) || (players[1].y === row && players[1].x === col);
+
+        function isPlayerOn(row,col){
+            return (players[0].y===row&&players[0].x===col)||(players[1].y===row&&players[1].x===col);
         }
-        function collectStar(row, col) {
-            let idx = stars.findIndex(s => s.row === row && s.col === col);
-            if (idx !== -1) {
+
+        function collectStar(row,col){
+            let idx=stars.findIndex(s=>s.row===row&&s.col===col);
+            if(idx!==-1){
                 stars.splice(idx,1);
-                if (blocks[row][col] === null) {
-                    blocks[row][col] = { type: 'starTree', plantedTime: Date.now() };
-                    starTreeList.push({ row, col });
+                if(blocks[row][col]===null){
+                    blocks[row][col]={type:'starTree',plantedTime:Date.now()};
+                    starTreeList.push({row,col});
                 }
+                addExp(5);
                 startMeteorShower();
                 updateStarUI();
             }
         }
-        function startMeteorShower() {
-            if (meteorTimer) clearTimeout(meteorTimer);
-            for (let i=0; i<60; i++) {
+
+        function startMeteorShower(){
+            if(meteorTimer) clearTimeout(meteorTimer);
+            for(let i=0;i<60;i++){
                 meteors.push({
-                    x: Math.random() * width,
-                    y: Math.random() * height - 100,
-                    vx: (Math.random() - 0.5) * 3 + 1,
-                    vy: 2 + Math.random() * 4,
-                    color: `hsl(${Math.random() * 60 + 30}, 100%, 70%)`
+                    x:Math.random()*width,
+                    y:Math.random()*height-100,
+                    vx:(Math.random()-0.5)*3+1,
+                    vy:2+Math.random()*4,
+                    color:`hsl(${Math.random()*60+30},100%,70%)`
                 });
             }
-            meteorTimer = setTimeout(() => { meteorTimer = null; }, 5000);
+            meteorTimer=setTimeout(()=>{meteorTimer=null;},5000);
         }
-        function updateStarUI() {
-            document.getElementById('starCount').innerText = stars.length;
+
+        function updateStarUI(){
+            document.getElementById('starCount').innerText=stars.length;
         }
-        function placeItem(row, col) {
-            if (row<0 || row>=gridH || col<0 || col>=gridW) return false;
-            if (isPlayerOn(row, col)) return false;
-            if (isFlowerMode) {
-                if (blocks[row][col] === null) {
-                    blocks[row][col] = { type: 'flower', color: '#FFC0CB' };
-                    return true;
-                }
-            } else {
-                if (blocks[row][col] === null) {
-                    blocks[row][col] = { type: 'block', color: currentColor };
-                    return true;
-                }
+
+        function placeItem(row,col){
+            if(row<0||row>=gridH||col<0||col>=gridW) return false;
+            if(isPlayerOn(row,col)) return false;
+            if(blocks[row][col]!==null) return false;
+
+            if(placeMode==='flower'){
+                blocks[row][col]={type:'flower',color:'#FFC0CB'};
+                addExp(1);
+            }else if(placeMode==='house'){
+                blocks[row][col]={type:'house',color:currentColor};
+                addExp(3);
+            }else if(placeMode==='tree'){
+                blocks[row][col]={type:'tree',color:'#66BB66'};
+                addExp(2);
+            }else{
+                blocks[row][col]={type:'block',color:currentColor};
+                addExp(1);
             }
-            return false;
+            return true;
         }
-        function removeItem(row, col) {
-            if (blocks[row][col] !== null) {
-                blocks[row][col] = null;
-                starTreeList = starTreeList.filter(t => !(t.row === row && t.col === col));
+
+        function removeItem(row,col){
+            if(blocks[row][col]!==null){
+                blocks[row][col]=null;
+                starTreeList=starTreeList.filter(t=>!(t.row===row&&t.col===col));
                 return true;
             }
             return false;
         }
-        function movePlayer(pIdx, dx, dy) {
-            let p = players[pIdx];
-            let newX = p.x + dx;
-            let newY = p.y + dy;
-            if (newX<0 || newX>=gridW || newY<0 || newY>=gridH) return;
-            if (!p.fly) {
-                let target = blocks[newY][newX];
-                if (target !== null && (target.type === 'block' || target.type === 'flower' || target.type === 'starTree')) {
-                    return;
-                }
+
+        function movePlayer(pIdx,dx,dy){
+            let p=players[pIdx];
+            let newX=p.x+dx;
+            let newY=p.y+dy;
+            if(newX<0||newX>=gridW||newY<0||newY>=gridH) return;
+            if(!p.fly){
+                let t=blocks[newY][newX];
+                if(t!==null&&['block','flower','house','tree','starTree'].includes(t.type)) return;
             }
-            p.x = newX;
-            p.y = newY;
-            let starIdx = stars.findIndex(s => s.row === p.y && s.col === p.x);
-            if (starIdx !== -1) collectStar(p.y, p.x);
+            p.x=newX; p.y=newY;
+            let starIdx=stars.findIndex(s=>s.row===p.y&&s.col===p.x);
+            if(starIdx!==-1) collectStar(p.y,p.x);
             updatePosUI();
         }
-        function updatePosUI() {
-            document.getElementById('pos0').innerText = `(${players[0].x},${players[0].y})`;
-            document.getElementById('pos1').innerText = `(${players[1].x},${players[1].y})`;
-        }
-        function resetBuildings() {
-            for (let i=0; i<gridH; i++)
-                for (let j=0; j<gridW; j++) blocks[i][j] = null;
-            starTreeList = [];
-            stars = [];
-            for (let i=0; i<3; i++) spawnRandomStar();
-        }
-        setInterval(() => {
-            if (stars.length < 3 && Math.random() < 0.4) spawnRandomStar();
-        }, 8000);
-        // 小猫跳跃动画
-        function updateCatsJump() {
-            for (let cat of cats) {
-                cat.jumpY = Math.sin(Date.now() * 0.008 + cat.offsetAngle) * 3;
-            }
+
+        function updatePosUI(){
+            document.getElementById('pos0').innerText=`(${players[0].x},${players[0].y})`;
+            document.getElementById('pos1').innerText=`(${players[1].x},${players[1].y})`;
         }
 
-        // ---- 优化：魔法少女风格绘图（含四肢+眨眼+服饰区分：李李裤子/毛毛裙子）----
-        function drawMagicalGirl(x, y, name, dressColor, hairColor, fly, isPants, blink) {
-            const cx = x + cellW/2;
-            const cy = y + cellH/2 - 4;
-            const size = cellW * 0.55;
+        function resetBuildings(){
+            for(let i=0;i<gridH;i++)
+                for(let j=0;j<gridW;j++) blocks[i][j]=null;
+            starTreeList=[]; stars=[];
+            level=1; exp=0; expNeed=10;
+            document.getElementById('level').innerText=1;
+            for(let i=0;i<3;i++) spawnRandomStar();
+        }
+
+        setInterval(()=>{
+            if(stars.length<3&&Math.random()<0.4) spawnRandomStar();
+        },8000);
+
+        function updateCatsJump(){
+            for(let cat of cats) cat.jumpY=Math.sin(Date.now()*0.008+cat.offsetAngle)*3;
+        }
+
+        // === 绘图：人物、小猫、房子、树、天气 ===
+        function drawMagicalGirl(x,y,name,dressColor,hairColor,fly,isPants,blink){
+            const cx=x+cellW/2, cy=y+cellH/2-4, size=cellW*0.55;
             ctx.save();
-            if (fly) {
-                ctx.shadowBlur = 12;
-                ctx.shadowColor = "#FFDD88";
-            }
-            // 头发
-            ctx.fillStyle = hairColor;
-            ctx.beginPath();
-            ctx.ellipse(cx, cy - size*0.35, size*0.4, size*0.45, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 刘海
-            ctx.fillStyle = hairColor;
-            ctx.beginPath();
-            ctx.ellipse(cx, cy - size*0.4, size*0.35, size*0.25, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 脸
-            ctx.fillStyle = "#FFE0BD";
-            ctx.beginPath();
-            ctx.ellipse(cx, cy - size*0.1, size*0.35, size*0.4, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 鼻子（新增）
-            ctx.fillStyle = "#F1B7A2";
-            ctx.beginPath();
-            ctx.arc(cx, cy - size*0.1, size*0.03, 0, Math.PI*2);
-            ctx.fill();
-            // 眼睛（优化+眨眼）
-            ctx.fillStyle = "#4F2D1A";
-            if (blink) {
-                // 眨眼状态：眯眼
-                ctx.fillRect(cx - size*0.12, cy - size*0.15, size*0.08*2, size*0.02);
-                ctx.fillRect(cx + size*0.04, cy - size*0.15, size*0.08*2, size*0.02);
-            } else {
-                // 睁眼状态：大圆眼+高光
-                ctx.beginPath();
-                ctx.arc(cx - size*0.12, cy - size*0.15, size*0.08, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(cx + size*0.12, cy - size*0.15, size*0.08, 0, Math.PI*2);
-                ctx.fill();
-                // 高光
-                ctx.fillStyle = "white";
-                ctx.beginPath();
-                ctx.arc(cx - size*0.16, cy - size*0.19, size*0.03, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(cx + size*0.08, cy - size*0.19, size*0.03, 0, Math.PI*2);
-                ctx.fill();
-            }
-            // 腮红
-            ctx.fillStyle = "#FFAAAA";
-            ctx.beginPath();
-            ctx.ellipse(cx - size*0.22, cy - size*0.05, size*0.05, size*0.03, 0, 0, Math.PI*2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.ellipse(cx + size*0.22, cy - size*0.05, size*0.05, size*0.03, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 嘴巴（优化：带弧度）
-            ctx.beginPath();
-            ctx.arc(cx, cy, size*0.06, 0, Math.PI);
-            ctx.strokeStyle = "#B96F30";
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            // 身体
-            ctx.fillStyle = dressColor;
-            ctx.beginPath();
-            ctx.ellipse(cx, cy + size*0.12, size*0.28, size*0.25, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 蝴蝶结
-            ctx.fillStyle = "#FF6F61";
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - size*0.28);
-            ctx.quadraticCurveTo(cx - size*0.1, cy - size*0.35, cx, cy - size*0.4);
-            ctx.quadraticCurveTo(cx + size*0.1, cy - size*0.35, cx, cy - size*0.28);
-            ctx.fill();
+            if(fly){ctx.shadowBlur=12; ctx.shadowColor='#FFDD88';}
+            ctx.fillStyle=hairColor;
+            ctx.beginPath(); ctx.ellipse(cx,cy-size*0.35,size*0.4,size*0.45,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx,cy-size*0.4,size*0.35,size*0.25,0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#FFE0BD';
+            ctx.beginPath(); ctx.ellipse(cx,cy-size*0.1,size*0.35,size*0.4,0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#F1B7A2'; ctx.beginPath(); ctx.arc(cx,cy-size*0.1,size*0.03,0,Math.PI*2); ctx.fill();
 
-            // 四肢（新增：完整手臂+手，腿+脚）
-            // 左手
-            ctx.fillStyle = "#FFE0BD";
-            ctx.fillRect(cx - size*0.32, cy + size*0.02, size*0.1, size*0.18);
-            // 左手手
-            ctx.fillStyle = dressColor;
-            ctx.beginPath();
-            ctx.ellipse(cx - size*0.37, cy + size*0.2, size*0.06, size*0.05, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 右手
-            ctx.fillStyle = "#FFE0BD";
-            ctx.fillRect(cx + size*0.22, cy + size*0.02, size*0.1, size*0.18);
-            // 右手手
-            ctx.fillStyle = dressColor;
-            ctx.beginPath();
-            ctx.ellipse(cx + size*0.37, cy + size*0.2, size*0.06, size*0.05, 0, 0, Math.PI*2);
-            ctx.fill();
+            if(blink){
+                ctx.fillRect(cx-size*0.12,cy-size*0.15,size*0.16,size*0.02);
+                ctx.fillRect(cx+size*0.04,cy-size*0.15,size*0.16,size*0.02);
+            }else{
+                ctx.fillStyle='#4F2D1A';
+                ctx.beginPath(); ctx.arc(cx-size*0.12,cy-size*0.15,size*0.08,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx+size*0.12,cy-size*0.15,size*0.08,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle='white';
+                ctx.beginPath(); ctx.arc(cx-size*0.16,cy-size*0.19,size*0.03,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx+size*0.08,cy-size*0.19,size*0.03,0,Math.PI*2); ctx.fill();
+            }
 
-            // 服饰区分：李李（裤子）/ 毛毛（裙子）
-            if (isPants) {
-                // 李李-裤子
-                ctx.fillStyle = hairColor;
-                ctx.fillRect(cx - size*0.18, cy + size*0.25, size*0.36, size*0.2);
-                // 裤子装饰
-                ctx.fillStyle = "#FFF0B5";
-                ctx.fillRect(cx - size*0.18, cy + size*0.25, size*0.36, size*0.03);
-                // 腿+脚
-                ctx.fillStyle = "#FFE0BD";
-                ctx.fillRect(cx - size*0.12, cy + size*0.45, size*0.08, size*0.12);
-                ctx.fillRect(cx + size*0.04, cy + size*0.45, size*0.08, size*0.12);
-                // 脚
-                ctx.fillStyle = "#B5651E";
-                ctx.beginPath();
-                ctx.ellipse(cx - size*0.08, cy + size*0.57, size*0.07, size*0.04, 0, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.ellipse(cx + size*0.08, cy + size*0.57, size*0.07, size*0.04, 0, 0, Math.PI*2);
-                ctx.fill();
-            } else {
-                // 毛毛-裙子（带花边）
-                ctx.fillStyle = dressColor;
-                ctx.beginPath();
-                ctx.arc(cx, cy + size*0.35, size*0.32, 0, Math.PI, true);
-                ctx.fill();
-                // 裙子花边
-                ctx.fillStyle = "#FFF0B5";
-                for (let i=0; i<8; i++) {
-                    let ang = i * Math.PI/4 - Math.PI/2;
-                    let px = cx + Math.cos(ang) * size*0.32;
-                    let py = cy + size*0.35 + Math.sin(ang) * size*0.08;
-                    ctx.beginPath();
-                    ctx.arc(px, py, size*0.04, 0, Math.PI*2);
-                    ctx.fill();
+            ctx.fillStyle='#FFAAAA';
+            ctx.beginPath(); ctx.ellipse(cx-size*0.22,cy-size*0.05,size*0.05,size*0.03,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx+size*0.22,cy-size*0.05,size*0.05,size*0.03,0,0,Math.PI*2); ctx.fill();
+
+            ctx.beginPath(); ctx.arc(cx,cy,size*0.06,0,Math.PI); ctx.strokeStyle='#B96F30'; ctx.lineWidth=1.5; ctx.stroke();
+            ctx.fillStyle=dressColor; ctx.beginPath(); ctx.ellipse(cx,cy+size*0.12,size*0.28,size*0.25,0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#FF6F61'; ctx.beginPath(); ctx.moveTo(cx,cy-size*0.28); ctx.quadraticCurveTo(cx-size*0.1,cy-size*0.35,cx,cy-size*0.4); ctx.quadraticCurveTo(cx+size*0.1,cy-size*0.35,cx,cy-size*0.28); ctx.fill();
+
+            ctx.fillStyle='#FFE0BD'; ctx.fillRect(cx-size*0.32,cy+size*0.02,size*0.1,size*0.18);
+            ctx.fillStyle=dressColor; ctx.beginPath(); ctx.ellipse(cx-size*0.37,cy+size*0.2,size*0.06,size*0.05,0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle='#FFE0BD'; ctx.fillRect(cx+size*0.22,cy+size*0.02,size*0.1,size*0.18);
+            ctx.fillStyle=dressColor; ctx.beginPath(); ctx.ellipse(cx+size*0.37,cy+size*0.2,size*0.06,size*0.05,0,0,Math.PI*2); ctx.fill();
+
+            if(isPants){
+                ctx.fillStyle=hairColor; ctx.fillRect(cx-size*0.18,cy+size*0.25,size*0.36,size*0.2);
+                ctx.fillStyle='#FFF0B5'; ctx.fillRect(cx-size*0.18,cy+size*0.25,size*0.36,size*0.03);
+                ctx.fillStyle='#FFE0BD'; ctx.fillRect(cx-size*0.12,cy+size*0.45,size*0.08,size*0.12);
+                ctx.fillRect(cx+size*0.04,cy+size*0.45,size*0.08,size*0.12);
+                ctx.fillStyle='#B5651E'; ctx.beginPath(); ctx.ellipse(cx-size*0.08,cy+size*0.57,size*0.07,size*0.04,0,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(cx+size*0.08,cy+size*0.57,size*0.07,size*0.04,0,0,Math.PI*2); ctx.fill();
+            }else{
+                ctx.fillStyle=dressColor; ctx.beginPath(); ctx.arc(cx,cy+size*0.35,size*0.32,0,Math.PI,true); ctx.fill();
+                ctx.fillStyle='#FFF0B5';
+                for(let i=0;i<8;i++){
+                    let ang=i*Math.PI/4-Math.PI/2;
+                    let px=cx+Math.cos(ang)*size*0.32;
+                    let py=cy+size*0.35+Math.sin(ang)*size*0.08;
+                    ctx.beginPath(); ctx.arc(px,py,size*0.04,0,Math.PI*2); ctx.fill();
                 }
-                // 腿+脚（细腿）
-                ctx.fillStyle = "#FFE0BD";
-                ctx.fillRect(cx - size*0.08, cy + size*0.4, size*0.06, size*0.15);
-                ctx.fillRect(cx + size*0.02, cy + size*0.4, size*0.06, size*0.15);
-                // 脚（小鞋子）
-                ctx.fillStyle = "#FF6F61";
-                ctx.beginPath();
-                ctx.ellipse(cx - size*0.05, cy + size*0.55, size*0.06, size*0.03, 0, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.ellipse(cx + size*0.05, cy + size*0.55, size*0.06, size*0.03, 0, 0, Math.PI*2);
-                ctx.fill();
+                ctx.fillStyle='#FFE0BD'; ctx.fillRect(cx-size*0.08,cy+size*0.4,size*0.06,size*0.15);
+                ctx.fillRect(cx+size*0.02,cy+size*0.4,size*0.06,size*0.15);
+                ctx.fillStyle='#FF6F61'; ctx.beginPath(); ctx.ellipse(cx-size*0.05,cy+size*0.55,size*0.06,size*0.03,0,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(cx+size*0.05,cy+size*0.55,size*0.06,size*0.03,0,0,Math.PI*2); ctx.fill();
             }
             ctx.restore();
         }
 
-        // ---- 优化：可爱小猫绘图（含四肢+眨眼+鼻子嘴巴）----
-        function drawCuteCat(x, y, name, type, jumpY, blink) {
-            const cx = x;
-            const cy = y + jumpY;
-            const size = cellW * 0.28;
+        function drawCuteCat(x,y,name,type,jumpY,blink){
+            const cx=x, cy=y+jumpY, size=cellW*0.28;
             ctx.save();
-            // 身体
-            ctx.fillStyle = type === 'silver' ? "#C0C0C0" : "#E8A87C";
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, size*0.65, size*0.5, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 头
-            ctx.beginPath();
-            ctx.ellipse(cx, cy - size*0.25, size*0.5, size*0.45, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 耳朵
-            ctx.fillStyle = type === 'silver' ? "#A9A9A9" : "#B57A4A";
-            ctx.beginPath();
-            ctx.moveTo(cx - size*0.3, cy - size*0.55);
-            ctx.lineTo(cx - size*0.15, cy - size*0.35);
-            ctx.lineTo(cx - size*0.45, cy - size*0.45);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(cx + size*0.3, cy - size*0.55);
-            ctx.lineTo(cx + size*0.15, cy - size*0.35);
-            ctx.lineTo(cx + size*0.45, cy - size*0.45);
-            ctx.fill();
-            // 鼻子（新增）
-            ctx.fillStyle = "#FF9E80";
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - size*0.25);
-            ctx.lineTo(cx - size*0.05, cy - size*0.2);
-            ctx.lineTo(cx + size*0.05, cy - size*0.2);
-            ctx.fill();
-            // 嘴巴（新增）
-            ctx.strokeStyle = "#4a2a1a";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy - size*0.2);
-            ctx.lineTo(cx, cy - size*0.15);
-            ctx.lineTo(cx - size*0.05, cy - size*0.12);
-            ctx.moveTo(cx, cy - size*0.15);
-            ctx.lineTo(cx + size*0.05, cy - size*0.12);
-            ctx.stroke();
-            // 眼睛（优化+眨眼）
-            ctx.fillStyle = type === 'silver' ? "#66CC66" : "#88DD66";
-            if (blink) {
-                // 眨眼：眯眼
-                ctx.fillRect(cx - size*0.18, cy - size*0.3, size*0.12, size*0.02);
-                ctx.fillRect(cx + size*0.06, cy - size*0.3, size*0.12, size*0.02);
-            } else {
-                // 睁眼：圆眼+黑瞳+高光
-                ctx.beginPath();
-                ctx.arc(cx - size*0.18, cy - size*0.3, size*0.08, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(cx + size*0.18, cy - size*0.3, size*0.08, 0, Math.PI*2);
-                ctx.fill();
-                // 黑瞳
-                ctx.fillStyle = "#000";
-                ctx.beginPath();
-                ctx.arc(cx - size*0.2, cy - size*0.32, size*0.03, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(cx + size*0.16, cy - size*0.32, size*0.03, 0, Math.PI*2);
-                ctx.fill();
-                // 高光
-                ctx.fillStyle = "white";
-                ctx.beginPath();
-                ctx.arc(cx - size*0.17, cy - size*0.34, size*0.02, 0, Math.PI*2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(cx + size*0.19, cy - size*0.34, size*0.02, 0, Math.PI*2);
-                ctx.fill();
+            ctx.fillStyle=type==='silver'?'#C0C0C0':'#E8A87C';
+            ctx.beginPath(); ctx.ellipse(cx,cy,size*0.65,size*0.5,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx,cy-size*0.25,size*0.5,size*0.45,0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle=type==='silver'?'#A9A9A9':'#B57A4A';
+            ctx.beginPath(); ctx.moveTo(cx-size*0.3,cy-size*0.55); ctx.lineTo(cx-size*0.15,cy-size*0.35); ctx.lineTo(cx-size*0.45,cy-size*0.45); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(cx+size*0.3,cy-size*0.55); ctx.lineTo(cx+size*0.15,cy-size*0.35); ctx.lineTo(cx+size*0.45,cy-size*0.45); ctx.fill();
+
+            ctx.fillStyle='#FF9E80'; ctx.beginPath(); ctx.moveTo(cx,cy-size*0.25); ctx.lineTo(cx-size*0.05,cy-size*0.2); ctx.lineTo(cx+size*0.05,cy-size*0.2); ctx.fill();
+            ctx.strokeStyle='#4a2a1a'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(cx,cy-size*0.2); ctx.lineTo(cx,cy-size*0.15); ctx.lineTo(cx-size*0.05,cy-size*0.12); ctx.moveTo(cx,cy-size*0.15); ctx.lineTo(cx+size*0.05,cy-size*0.12); ctx.stroke();
+
+            if(blink){
+                ctx.fillRect(cx-size*0.18,cy-size*0.3,size*0.12,size*0.02);
+                ctx.fillRect(cx+size*0.06,cy-size*0.3,size*0.12,size*0.02);
+            }else{
+                ctx.fillStyle=type==='silver'?'#66CC66':'#88DD66';
+                ctx.beginPath(); ctx.arc(cx-size*0.18,cy-size*0.3,size*0.08,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx+size*0.18,cy-size*0.3,size*0.08,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle='#000';
+                ctx.beginPath(); ctx.arc(cx-size*0.2,cy-size*0.32,size*0.03,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx+size*0.16,cy-size*0.32,size*0.03,0,Math.PI*2); ctx.fill();
+                ctx.fillStyle='white';
+                ctx.beginPath(); ctx.arc(cx-size*0.17,cy-size*0.34,size*0.02,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx+size*0.19,cy-size*0.34,size*0.02,0,Math.PI*2); ctx.fill();
             }
-            // 胡须
+
             ctx.beginPath();
-            ctx.moveTo(cx - size*0.35, cy - size*0.28);
-            ctx.lineTo(cx - size*0.55, cy - size*0.28);
-            ctx.moveTo(cx - size*0.35, cy - size*0.22);
-            ctx.lineTo(cx - size*0.55, cy - size*0.22);
-            ctx.moveTo(cx + size*0.35, cy - size*0.28);
-            ctx.lineTo(cx + size*0.55, cy - size*0.28);
-            ctx.moveTo(cx + size*0.35, cy - size*0.22);
-            ctx.lineTo(cx + size*0.55, cy - size*0.22);
-            ctx.strokeStyle = "#888";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            // 四肢（新增：前爪+后爪）
-            ctx.fillStyle = type === 'silver' ? "#D0D0D0" : "#F0C0A0";
-            // 左前爪
-            ctx.beginPath();
-            ctx.ellipse(cx - size*0.45, cy - size*0.05, size*0.08, size*0.07, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 右前爪
-            ctx.beginPath();
-            ctx.ellipse(cx + size*0.45, cy - size*0.05, size*0.08, size*0.07, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 左后爪
-            ctx.beginPath();
-            ctx.ellipse(cx - size*0.35, cy + size*0.35, size*0.08, size*0.07, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 右后爪
-            ctx.beginPath();
-            ctx.ellipse(cx + size*0.35, cy + size*0.35, size*0.08, size*0.07, 0, 0, Math.PI*2);
-            ctx.fill();
-            // 爪子肉垫（新增，更可爱）
-            ctx.fillStyle = "#FF9E80";
-            // 左前爪肉垫
-            for (let i=0; i<3; i++) {
-                ctx.beginPath();
-                ctx.arc(cx - size*0.47 + i*size*0.04, cy - size*0.03, size*0.02, 0, Math.PI*2);
-                ctx.fill();
-            }
-            // 右前爪肉垫
-            for (let i=0; i<3; i++) {
-                ctx.beginPath();
-                ctx.arc(cx + size*0.43 - i*size*0.04, cy - size*0.03, size*0.02, 0, Math.PI*2);
-                ctx.fill();
-            }
-            // 名字
-            ctx.font = `${Math.max(9, Math.floor(cellW*0.1))}px "Comic Neue"`;
-            ctx.fillStyle = "#4a2a1a";
-            ctx.fillText(name, cx - 12, cy - size*0.6);
-            // 尾巴
-            ctx.beginPath();
-            ctx.moveTo(cx + size*0.4, cy + size*0.2);
-            ctx.quadraticCurveTo(cx + size*0.6, cy + size*0.1, cx + size*0.55, cy - size*0.1);
-            ctx.fillStyle = type === 'silver' ? "#A9A9A9" : "#B57A4A";
-            ctx.fill();
+            ctx.moveTo(cx-size*0.35,cy-size*0.28); ctx.lineTo(cx-size*0.55,cy-size*0.28);
+            ctx.moveTo(cx-size*0.35,cy-size*0.22); ctx.lineTo(cx-size*0.55,cy-size*0.22);
+            ctx.moveTo(cx+size*0.35,cy-size*0.28); ctx.lineTo(cx+size*0.55,cy-size*0.28);
+            ctx.moveTo(cx+size*0.35,cy-size*0.22); ctx.lineTo(cx+size*0.55,cy-size*0.22);
+            ctx.strokeStyle='#888'; ctx.lineWidth=1; ctx.stroke();
+
+            ctx.fillStyle=type==='silver'?'#D0D0D0':'#F0C0A0';
+            ctx.beginPath(); ctx.ellipse(cx-size*0.45,cy-size*0.05,size*0.08,size*0.07,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx+size*0.45,cy-size*0.05,size*0.08,size*0.07,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx-size*0.35,cy+size*0.35,size*0.08,size*0.07,0,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(cx+size*0.35,cy+size*0.35,size*0.08,size*0.07,0,0,Math.PI*2); ctx.fill();
+
+            ctx.fillStyle='#FF9E80';
+            for(let i=0;i<3;i++){ctx.beginPath(); ctx.arc(cx-size*0.47+i*size*0.04,cy-size*0.03,size*0.02,0,Math.PI*2); ctx.fill();}
+            for(let i=0;i<3;i++){ctx.beginPath(); ctx.arc(cx+size*0.43-i*size*0.04,cy-size*0.03,size*0.02,0,Math.PI*2); ctx.fill();}
+
+            ctx.font=`${Math.max(9,Math.floor(cellW*0.1))}px "Comic Neue"`;
+            ctx.fillStyle='#4a2a1a'; ctx.fillText(name,cx-12,cy-size*0.6);
+            ctx.beginPath(); ctx.moveTo(cx+size*0.4,cy+size*0.2); ctx.quadraticCurveTo(cx+size*0.6,cy+size*0.1,cx+size*0.55,cy-size*0.1);
+            ctx.fillStyle=type==='silver'?'#A9A9A9':'#B57A4A'; ctx.fill();
             ctx.restore();
         }
 
-        function draw() {
-            ctx.clearRect(0,0,width,height);
-            ctx.fillStyle = "#b3d9a0";
-            ctx.fillRect(0,0,width,height);
-            ctx.strokeStyle = "#d9d0a5";
-            ctx.lineWidth = 1;
-            for (let i=0; i<=gridW; i++) {
-                ctx.beginPath();
-                ctx.moveTo(i*cellW,0);
-                ctx.lineTo(i*cellW,height);
-                ctx.stroke();
-                ctx.moveTo(0,i*cellH);
-                ctx.lineTo(width,i*cellH);
-                ctx.stroke();
+        function drawHouse(x,y,color){
+            ctx.fillStyle=color; ctx.fillRect(x+5,y+10,cellW-10,cellH-20);
+            ctx.fillStyle='#FFFFFF'; ctx.fillRect(x+15,y+20,12,12);
+            ctx.fillStyle='#885533'; ctx.beginPath(); ctx.moveTo(x,y+10); ctx.lineTo(x+cellW/2,y); ctx.lineTo(x+cellW,y+10); ctx.fill();
+        }
+
+        function drawTree(x,y){
+            ctx.fillStyle='#8B5A2B'; ctx.fillRect(x+cellW*0.45,y+cellH*0.4,cellW*0.1,cellH*0.45);
+            ctx.fillStyle='#66BB66'; ctx.beginPath(); ctx.arc(x+cellW/2,y+cellH*0.3,cellW*0.25,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(x+cellW*0.3,y+cellH*0.4,cellW*0.2,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(x+cellW*0.7,y+cellH*0.4,cellW*0.2,0,Math.PI*2); ctx.fill();
+        }
+
+        function drawWeather(){
+            if(weather==='rain'){
+                ctx.fillStyle='#99CCFF';
+                for(let i=0;i<rainDrops.length;i++){
+                    let r=rainDrops[i];
+                    ctx.fillRect(r.x,r.y,2,8);
+                    r.y+=r.vy;
+                    if(r.y>height) rainDrops.splice(i--,1);
+                }
             }
-            // 绘制砖块、花、星星树
-            for (let row=0; row<gridH; row++) {
-                for (let col=0; col<gridW; col++) {
-                    let item = blocks[row][col];
-                    if (!item) continue;
-                    let x = col * cellW;
-                    let y = row * cellH;
-                    if (item.type === 'block') {
-                        ctx.fillStyle = item.color;
-                        ctx.fillRect(x+1, y+1, cellW-2, cellH-2);
-                        ctx.fillStyle = "rgba(0,0,0,0.1)";
-                        ctx.fillRect(x+2, y+2, cellW-4, 3);
-                    } else if (item.type === 'flower') {
-                        ctx.fillStyle = "#FFC0CB";
-                        ctx.beginPath();
-                        ctx.arc(x+cellW/2, y+cellH/2, cellW*0.3, 0, Math.PI*2);
-                        ctx.fill();
-                        ctx.fillStyle = "#F06292";
-                        for (let i=0;i<5;i++) {
-                            let ang = i*Math.PI*2/5;
-                            let px = x+cellW/2 + Math.cos(ang)*cellW*0.2;
-                            let py = y+cellH/2 + Math.sin(ang)*cellW*0.2;
-                            ctx.beginPath();
-                            ctx.arc(px, py, cellW*0.12, 0, Math.PI*2);
-                            ctx.fill();
+        }
+
+        function draw(){
+            ctx.clearRect(0,0,width,height);
+            ctx.fillStyle=weather==='rain'?'#AACCFF':'#b3d9a0'; ctx.fillRect(0,0,width,height);
+            ctx.strokeStyle='#d9d0a5'; ctx.lineWidth=1;
+            for(let i=0;i<=gridW;i++){ctx.beginPath(); ctx.moveTo(i*cellW,0); ctx.lineTo(i*cellW,height); ctx.stroke();}
+            for(let i=0;i<=gridH;i++){ctx.beginPath(); ctx.moveTo(0,i*cellH); ctx.lineTo(width,i*cellH); ctx.stroke();}
+
+            for(let row=0;row<gridH;row++){
+                for(let col=0;col<gridW;col++){
+                    let item=blocks[row][col];
+                    if(!item) continue;
+                    let x=col*cellW, y=row*cellH;
+                    if(item.type==='block'){
+                        ctx.fillStyle=item.color; ctx.fillRect(x+1,y+1,cellW-2,cellH-2);
+                        ctx.fillStyle='rgba(0,0,0,0.1)'; ctx.fillRect(x+2,y+2,cellW-4,3);
+                    }else if(item.type==='flower'){
+                        ctx.fillStyle='#FFC0CB'; ctx.beginPath(); ctx.arc(x+cellW/2,y+cellH/2,cellW*0.3,0,Math.PI*2); ctx.fill();
+                        ctx.fillStyle='#F06292';
+                        for(let i=0;i<5;i++){
+                            let ang=i*Math.PI*2/5;
+                            let px=x+cellW/2+Math.cos(ang)*cellW*0.2;
+                            let py=y+cellH/2+Math.sin(ang)*cellW*0.2;
+                            ctx.beginPath(); ctx.arc(px,py,cellW*0.12,0,Math.PI*2); ctx.fill();
                         }
-                    } else if (item.type === 'starTree') {
-                        ctx.fillStyle = "#8B5A2B";
-                        ctx.fillRect(x+cellW*0.4, y+cellH*0.5, cellW*0.2, cellH*0.3);
-                        ctx.fillStyle = "#FFD966";
-                        ctx.beginPath();
-                        ctx.moveTo(x+cellW/2, y+cellH*0.3);
-                        ctx.lineTo(x+cellW*0.3, y+cellH*0.5);
-                        ctx.lineTo(x+cellW*0.7, y+cellH*0.5);
-                        ctx.fill();
-                        ctx.fillStyle = "#FFB347";
-                        ctx.beginPath();
-                        ctx.arc(x+cellW/2, y+cellH*0.2, cellW*0.12, 0, Math.PI*2);
-                        ctx.fill();
+                    }else if(item.type==='house'){
+                        drawHouse(x,y,item.color);
+                    }else if(item.type==='tree'){
+                        drawTree(x,y);
+                    }else if(item.type==='starTree'){
+                        ctx.fillStyle='#8B5A2B'; ctx.fillRect(x+cellW*0.4,y+cellH*0.5,cellW*0.2,cellH*0.3);
+                        ctx.fillStyle='#FFD966'; ctx.beginPath(); ctx.moveTo(x+cellW/2,y+cellH*0.3); ctx.lineTo(x+cellW*0.3,y+cellH*0.5); ctx.lineTo(x+cellW*0.7,y+cellH*0.5); ctx.fill();
+                        ctx.fillStyle='#FFB347'; ctx.beginPath(); ctx.arc(x+cellW/2,y+cellH*0.2,cellW*0.12,0,Math.PI*2); ctx.fill();
                     }
                 }
             }
-            // 星星
-            for (let s of stars) {
-                ctx.fillStyle = "#FFD966";
-                let spikes = 5, outer = cellW*0.25, inner = cellW*0.12;
-                let cx = s.x, cy = s.y;
-                ctx.beginPath();
-                for (let i=0; i<spikes*2; i++) {
-                    let rad = (i * Math.PI*2 / (spikes*2)) - Math.PI/2;
-                    let r = (i%2===0) ? outer : inner;
-                    let px = cx + Math.cos(rad)*r;
-                    let py = cy + Math.sin(rad)*r;
-                    if (i===0) ctx.moveTo(px,py);
-                    else ctx.lineTo(px,py);
+
+            for(let s of stars){
+                ctx.fillStyle='#FFD966';
+                let spikes=5,outer=cellW*0.25,inner=cellW*0.12;
+                let cx=s.x, cy=s.y; ctx.beginPath();
+                for(let i=0;i<spikes*2;i++){
+                    let rad=(i*Math.PI*2/(spikes*2))-Math.PI/2;
+                    let r=(i%2===0)?outer:inner;
+                    let px=cx+Math.cos(rad)*r;
+                    let py=cy+Math.sin(rad)*r;
+                    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
                 }
                 ctx.fill();
-                ctx.fillStyle = "#FFB347";
-                ctx.beginPath();
-                ctx.arc(cx, cy, cellW*0.08, 0, Math.PI*2);
-                ctx.fill();
+                ctx.fillStyle='#FFB347'; ctx.beginPath(); ctx.arc(cx,cy,cellW*0.08,0,Math.PI*2); ctx.fill();
             }
-            // 绘制小女孩（传参服饰/眨眼状态）
-            for (let p of players) {
-                let x = p.x * cellW;
-                let y = p.y * cellH;
-                drawMagicalGirl(x, y, p.name, p.color, p.hair, p.fly, p.isPants, p.blink);
+
+            drawWeather();
+
+            for(let p of players){
+                let x=p.x*cellW, y=p.y*cellH;
+                drawMagicalGirl(x,y,p.name,p.color,p.hair,p.fly,p.isPants,p.blink);
             }
-            // 小猫跟随李李，转圈+跳跃（传参眨眼状态）
-            let lili = players[0];
-            let liliX = lili.x * cellW + cellW/2;
-            let liliY = lili.y * cellH + cellH/2 - 6;
-            catAngle += 0.03;
-            updateCatsJump();
-            for (let cat of cats) {
-                let angle = catAngle + cat.offsetAngle;
-                let catX = liliX + Math.cos(angle) * cat.radius;
-                let catY = liliY + Math.sin(angle) * cat.radius * 0.6;
-                drawCuteCat(catX, catY, cat.name, cat.type, cat.jumpY, cat.blink);
+
+            let lili=players[0];
+            let liliX=lili.x*cellW+cellW/2;
+            let liliY=lili.y*cellH+cellH/2-6;
+            catAngle+=0.03; updateCatsJump();
+            for(let cat of cats){
+                let angle=catAngle+cat.offsetAngle;
+                let catX=liliX+Math.cos(angle)*cat.radius;
+                let catY=liliY+Math.sin(angle)*cat.radius*0.6;
+                drawCuteCat(catX,catY,cat.name,cat.type,cat.jumpY,cat.blink);
             }
-            // 流星雨
-            for (let i=0; i<meteors.length; i++) {
-                let m = meteors[i];
-                ctx.fillStyle = m.color;
-                ctx.fillRect(m.x, m.y, 4, 2);
-                m.x += m.vx;
-                m.y += m.vy;
-                if (m.y > height || m.x < 0 || m.x > width) {
-                    meteors.splice(i,1);
-                    i--;
-                }
+
+            for(let i=0;i<meteors.length;i++){
+                let m=meteors[i]; ctx.fillStyle=m.color; ctx.fillRect(m.x,m.y,4,2);
+                m.x+=m.vx; m.y+=m.vy;
+                if(m.y>height||m.x<0||m.x>width) meteors.splice(i--,1);
             }
-            ctx.font = "bold 12px 'Comic Neue'";
-            ctx.fillStyle = "#4a2a1a";
-            ctx.fillText("✨ 点击颜色砖 → 点格子建房子 | 🌻种花模式 | ⭐踩星星 → 星星树+流星雨 | F 飞行", 20, 30);
+
+            ctx.font="bold 12px 'Comic Neue'"; ctx.fillStyle="#4a2a1a";
+            ctx.fillText("🏠建房/🌻种花/🌳种树/🌟踩星星升级 | 🌤️随机天气 | F飞行 | Tab切换",20,30);
         }
-        function animate() {
-            draw();
-            requestAnimationFrame(animate);
+
+        function animate(){draw(); requestAnimationFrame(animate);}
+
+        function getGridCoord(e){
+            const rect=canvas.getBoundingClientRect();
+            const scaleX=canvas.width/rect.width;
+            const scaleY=canvas.height/rect.height;
+            let clientX,clientY;
+            if(e.touches){clientX=e.touches[0].clientX; clientY=e.touches[0].clientY;}
+            else{clientX=e.clientX; clientY=e.clientY;}
+            const canvasX=(clientX-rect.left)*scaleX;
+            const canvasY=(clientY-rect.top)*scaleY;
+            return {row:Math.floor(canvasY/cellH),col:Math.floor(canvasX/cellW)};
         }
-        // 事件绑定
-        function getGridCoord(e) {
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            let clientX, clientY;
-            if (e.touches) {
-                clientX = e.touches[0].clientX;
-                clientY = e.touches[0].clientY;
-            } else {
-                clientX = e.clientX;
-                clientY = e.clientY;
-            }
-            const canvasX = (clientX - rect.left) * scaleX;
-            const canvasY = (clientY - rect.top) * scaleY;
-            const col = Math.floor(canvasX / cellW);
-            const row = Math.floor(canvasY / cellH);
-            return { row, col };
-        }
-        canvas.addEventListener('click', (e) => {
-            const { row, col } = getGridCoord(e);
-            if (row>=0 && row<gridH && col>=0 && col<gridW) placeItem(row, col);
+
+        canvas.addEventListener('click',(e)=>{
+            const {row,col}=getGridCoord(e);
+            if(row>=0&&row<gridH&&col>=0&&col<gridW) placeItem(row,col);
         });
-        canvas.addEventListener('contextmenu', (e) => {
+
+        canvas.addEventListener('contextmenu',(e)=>{
             e.preventDefault();
-            const { row, col } = getGridCoord(e);
-            if (row>=0 && row<gridH && col>=0 && col<gridW) removeItem(row, col);
+            const {row,col}=getGridCoord(e);
+            if(row>=0&&row<gridH&&col>=0&&col<gridW) removeItem(row,col);
         });
+
         let pressTimer;
-        canvas.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                pressTimer = setTimeout(() => {
-                    const { row, col } = getGridCoord(e);
-                    if (row>=0 && row<gridH && col>=0 && col<gridW) removeItem(row, col);
-                }, 500);
+        canvas.addEventListener('touchstart',(e)=>{
+            if(e.touches.length===1){
+                pressTimer=setTimeout(()=>{
+                    const {row,col}=getGridCoord(e);
+                    if(row>=0&&row<gridH&&col>=0&&col<gridW) removeItem(row,col);
+                },500);
             }
         });
-        canvas.addEventListener('touchend', () => clearTimeout(pressTimer));
-        canvas.addEventListener('touchmove', () => clearTimeout(pressTimer));
-        // 键盘控制
-        const keyState = {};
-        window.addEventListener('keydown', (e) => {
-            const key = e.key;
-            if (key === 'f' || key === 'F') {
-                players[currentControl].fly = !players[currentControl].fly;
-                return;
-            }
-            if (key === 'Tab') {
-                e.preventDefault();
-                currentControl = currentControl === 0 ? 1 : 0;
-                return;
-            }
-            keyState[key] = true;
+        canvas.addEventListener('touchend',()=>clearTimeout(pressTimer));
+        canvas.addEventListener('touchmove',()=>clearTimeout(pressTimer));
+
+        const keyState={};
+        window.addEventListener('keydown',(e)=>{
+            const key=e.key;
+            if(key==='f'||key==='F'){players[currentControl].fly=!players[currentControl].fly; return;}
+            if(key==='Tab'){e.preventDefault(); currentControl=currentControl===0?1:0; return;}
+            keyState[key]=true;
         });
-        window.addEventListener('keyup', (e) => { keyState[e.key] = false; });
-        function handleMovement() {
-            if (keyState['w'] || keyState['W']) movePlayer(0, 0, -1);
-            if (keyState['s'] || keyState['S']) movePlayer(0, 0, 1);
-            if (keyState['a'] || keyState['A']) movePlayer(0, -1, 0);
-            if (keyState['d'] || keyState['D']) movePlayer(0, 1, 0);
-            if (keyState['ArrowUp']) movePlayer(1, 0, -1);
-            if (keyState['ArrowDown']) movePlayer(1, 0, 1);
-            if (keyState['ArrowLeft']) movePlayer(1, -1, 0);
-            if (keyState['ArrowRight']) movePlayer(1, 1, 0);
+        window.addEventListener('keyup',(e)=>{keyState[e.key]=false;});
+
+        function handleMovement(){
+            if(keyState['w']||keyState['W']) movePlayer(0,0,-1);
+            if(keyState['s']||keyState['S']) movePlayer(0,0,1);
+            if(keyState['a']||keyState['A']) movePlayer(0,-1,0);
+            if(keyState['d']||keyState['D']) movePlayer(0,1,0);
+            if(keyState['ArrowUp']) movePlayer(1,0,-1);
+            if(keyState['ArrowDown']) movePlayer(1,0,1);
+            if(keyState['ArrowLeft']) movePlayer(1,-1,0);
+            if(keyState['ArrowRight']) movePlayer(1,1,0);
         }
-        setInterval(handleMovement, 30);
-        // UI 初始化
-        const paletteDiv = document.getElementById('colorPalette');
-        colors.forEach(c => {
-            const btn = document.createElement('div');
-            btn.className = 'color-btn';
-            btn.style.backgroundColor = c;
-            btn.addEventListener('click', () => {
-                currentColor = c;
-                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        setInterval(handleMovement,30);
+
+        const paletteDiv=document.getElementById('colorPalette');
+        colors.forEach(c=>{
+            const btn=document.createElement('div');
+            btn.className='color-btn'; btn.style.backgroundColor=c;
+            btn.addEventListener('click',()=>{
+                currentColor=c;
+                document.querySelectorAll('.color-btn').forEach(b=>b.classList.remove('active'));
                 btn.classList.add('active');
-                isFlowerMode = false;
-                document.getElementById('flowerModeBtn').classList.remove('active');
+                placeMode='block';
+                document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
             });
             paletteDiv.appendChild(btn);
         });
         document.querySelectorAll('.color-btn')[0].classList.add('active');
-        const flowerBtn = document.getElementById('flowerModeBtn');
-        flowerBtn.addEventListener('click', () => {
-            isFlowerMode = !isFlowerMode;
-            if (isFlowerMode) flowerBtn.classList.add('active');
-            else flowerBtn.classList.remove('active');
+
+        document.getElementById('flowerModeBtn').addEventListener('click',()=>{
+            placeMode='flower';
+            document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+            document.getElementById('flowerModeBtn').classList.add('active');
         });
-        document.getElementById('resetBtn').addEventListener('click', resetBuildings);
+        document.getElementById('houseModeBtn').addEventListener('click',()=>{
+            placeMode='house';
+            document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+            document.getElementById('houseModeBtn').classList.add('active');
+        });
+        document.getElementById('treeModeBtn').addEventListener('click',()=>{
+            placeMode='tree';
+            document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+            document.getElementById('treeModeBtn').classList.add('active');
+        });
+
+        document.getElementById('resetBtn').addEventListener('click',resetBuildings);
         resetBuildings();
         updatePosUI();
         animate();
